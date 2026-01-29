@@ -31,6 +31,12 @@ Formats markdown tables read from stdin or FILE and outputs to stdout.
   FILE             Input file (reads from stdin if not specified)
 ```
 
+## Input vs output formats
+
+*md-table-formatter* only accepts markdown style tables as input.
+
+The only output format that is recognized markdown is the default format with --no-top and --no-bottom options.
+
 ## CLI Examples
 
 ```bash
@@ -53,12 +59,24 @@ Input:
 | Insert flex point (in arrow) | CA0-1 |
 ```
 
-Default output:
+Style 0 with no top nor bottom:
+
+```text
+| Operation                    | Bg      |
+|------------------------------|---------|
+| Edit selected element        | «douck» |
+| Add to selection             | «C00-1» |
+| Quick link                   | «0A0-1» |
+| Duplicate elements           | «0AS-1» |
+| Insert flex point (in arrow) | «CA0-1» |
+```
+
+Default style (1):
 
 ```text
 .----------------------------------------.
 | Operation                    | Bg      |
-|------------------------------+---------|
+|------------------------------|---------|
 | Edit selected element        | «douck» |
 | Add to selection             | «C00-1» |
 | Quick link                   | «0A0-1» |
