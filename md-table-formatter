@@ -16,11 +16,13 @@ sub main
 {
 my @args = @_  ;
 
-my $style     = 1 ;
-my $align_all = 0 ;
-my $no_top    = 0 ;
-my $no_bottom = 0 ;
-my $no_sides  = 0 ;
+my $style          = 1 ;
+my $align_all      = 0 ;
+my $no_top         = 0 ;
+my $no_bottom      = 0 ;
+my $no_sides       = 0 ;
+my $from_TSV       = 0 ;
+my $TSV_no_header  = 0 ;
 
 my $input_file ;
 
@@ -57,6 +59,14 @@ while (@args)
 		{
 		$no_sides = 1 ;
 		}
+	elsif ($arg eq '--from-TSV')
+		{
+		$from_TSV = 1 ;
+		}
+	elsif ($arg eq '--TSV-no-header')
+		{
+		$TSV_no_header = 1 ;
+		}
 	elsif ($arg eq '-h' || $arg eq '--help')
 		{
 		print_help() ;
@@ -87,6 +97,8 @@ else
 	chomp @lines ;
 	}
 
+@lines = from_TSV(\@lines, $TSV_no_header) if $from_TSV ;
+
 process_input(\@lines, $style, $align_all, $no_top, $no_bottom, $no_sides) ;
 }
 
@@ -113,6 +125,8 @@ Options:
   --no-top         no top line
   --no-bottom      no bottom line
   --no-sides       no side lines
+  --from-TSV       Convert from TSV format to markdown table
+  --TSV-no-header  Do not treat the first line as a header when converting from TSV
 
 Arguments:
   FILE             Input file (reads from stdin if not specified)
@@ -121,6 +135,33 @@ Example:
   cat table.md | md-table-formatter.pl -s 2
   md-table-formatter.pl -s 1 --align-all table.md
 HELP
+}
+
+# ----------------------------------------------------------------------------
+
+sub from_TSV
+{
+my ($lines, $no_header) = @_ ;
+
+my $is_header = 1 ;
+my @lines ;
+
+foreach my $line ( $lines->@* )
+	{
+	chomp( $line ) ;
+	my @cols = split( /\t/, $line ) ;
+	my $row = join( " | ", @cols ) ;
+	push @lines, "| $row |\n"  ;
+	
+	if ( $is_header && !$no_header )
+		{
+		my $sep = join( " | ", map( "---", @cols ) ) ;
+		push @lines, "| $sep |\n" ;
+		$is_header = 0 ;
+		}
+	}
+
+return @lines ;
 }
 
 # ----------------------------------------------------------------------------

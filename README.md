@@ -23,6 +23,8 @@ Formats markdown tables read from stdin or FILE and outputs to stdout.
   --no-top         no top line
   --no-bottom      no bottom line
   --no-sides       no side lines
+  --from-TSV       transform TSV to markdown tables
+  --TSV-no-header  TSV has no header row
 ```
 
 ## Arguments
