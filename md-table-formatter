@@ -16,13 +16,15 @@ sub main
 {
 my @args = @_  ;
 
-my $style          = 1 ;
-my $align_all      = 0 ;
-my $no_top         = 0 ;
-my $no_bottom      = 0 ;
-my $no_sides       = 0 ;
-my $from_TSV       = 0 ;
-my $TSV_no_header  = 0 ;
+my $style           = 0 ;
+my $align_all       = 0 ;
+my $no_top          = 0 ;
+my $no_bottom       = 0 ;
+my $no_sides        = 0 ;
+my $from_TSV        = 0 ;
+my $TSV_no_header   = 0 ;
+
+my $max_table_width = 10_000 ;  # Set a high value to avoid truncation
 
 my $input_file ;
 
@@ -32,20 +34,17 @@ while (@args)
 	
 	if ($arg eq '-s' || $arg eq '--style')
 		{
-		$style = shift @args ;
+		$style = shift @args // 0 ;
 		$style = int($style) ;
-		$style = 1 if $style < 0 || $style > 7 ;
-		
-		if ($style == 0)
-			{
-			$style     = 1 ;
-			$no_top    = 1 ;
-			$no_bottom = 1 ;
-			}
+		$style = 0 if $style < 0 || $style > 6 ;
 		}
 	elsif ($arg eq '-a' || $arg eq '--align-all')
 		{
 		$align_all = 1 ;
+		}
+	elsif ($arg eq '-m' || $arg eq '--max-width')
+		{
+		$max_table_width = shift @args // 10_000 ;
 		}
 	elsif ($arg eq '--no-top')
 		{
@@ -83,6 +82,13 @@ while (@args)
 		}
 	}
 
+if ($style == 0)
+	{
+	$style     = 0 ;
+	$no_top    = 1 ;
+	$no_bottom = 1 ;
+	}
+
 my @lines ;
 if (defined $input_file)
 	{
@@ -99,7 +105,7 @@ else
 
 @lines = from_TSV(\@lines, $TSV_no_header) if $from_TSV ;
 
-process_input(\@lines, $style, $align_all, $no_top, $no_bottom, $no_sides) ;
+process_input($max_table_width, \@lines, $style, $align_all, $no_top, $no_bottom, $no_sides) ;
 }
 
 # ----------------------------------------------------------------------------
@@ -112,26 +118,29 @@ Usage: md-table-formatter.pl [OPTIONS] [FILE]
 Formats markdown tables read from stdin or FILE and outputs to stdout.
 
 Options:
-  -s, --style N    Select table style (1-6, default: 1)
-                   0 = markdown
-                   1 = Asciio style
-                   2 = ASCII style (+, -, |)
-                   3 = Light box-drawing (Unicode)
-                   4 = Heavy box-drawing (Unicode)
-                   5 = Markdown style (|)
-                   6 = Minimal style (spaces only)
-  -a, --align-all  Align columns across all tables in the document
-  -h, --help       Show this help message
-  --no-top         no top line
-  --no-bottom      no bottom line
-  --no-sides       no side lines
-  --from-TSV       Convert from TSV format to markdown table
-  --TSV-no-header  Do not treat the first line as a header when converting from TSV
+  -s, --style N        table style
+                       0 = Markdown (default)
+                       1 = Asciio
+                       2 = ASCII (+, -, |)
+                       3 = Light box-drawing (Unicode)
+                       4 = Heavy box-drawing (Unicode)
+                       5 = Minimal (spaces only)
+                       6 = horizontal lines only
+
+  -a, --align-all      align columns across all tables in the document
+  -m, --max-width N    maximum table width
+  -h, --help           show this help message
+  --no-top             no top line
+  --no-bottom          no bottom line
+  --no-sides           no side lines
+  --from-TSV           convert from TSV format to markdown table
+  --TSV-no-header      do not treat the first line as a header when converting from TSV
 
 Arguments:
-  FILE             Input file (reads from stdin if not specified)
+  FILE                 input file (reads from stdin if not specified)
 
 Example:
+
   cat table.md | md-table-formatter.pl -s 2
   md-table-formatter.pl -s 1 --align-all table.md
 HELP
@@ -168,7 +177,7 @@ return @lines ;
 
 sub process_input
 {
-my ($lines, $style, $align_all, $no_top, $no_bottom, $no_sides) = @_ ;
+my ($max_table_width, $lines, $style, $align_all, $no_top, $no_bottom, $no_sides) = @_ ;
 
 my $i = 0 ;
 my @all_tables ;
@@ -200,7 +209,7 @@ while ($i < @$lines)
 				} ;
 			
 			push @all_tables, $table_data ;
-			push @output_plan, { type => 'table', index => $#all_tables } ;
+			push @output_plan, { type => 'table', index => $#all_tables, lines => \@table_lines} ;
 			}
 		else
 			{
@@ -240,15 +249,16 @@ if ($align_all && @all_tables > 0)
 		{
 		if ($item->{type} eq 'table')
 			{
-			my $table    = $all_tables[$item->{index}] ;
-			my $max_cols = max_columns($table->{headers}, $table->{rows}) ;
+			my $table = $all_tables[$item->{index}] ;
 			
 			print_table
 				(
 				$table->{headers},
 				$table->{alignments},
 				$table->{rows},
+				$item->{lines},
 				\@global_widths,
+				$max_table_width,
 				$global_max_cols,
 				$style,
 				$no_top,
@@ -280,7 +290,9 @@ else
 				$table->{headers},
 				$table->{alignments},
 				$table->{rows},
+				$item->{lines},
 				$col_widths,
+				$max_table_width,
 				$max_cols,
 				$style,
 				$no_top,
@@ -312,7 +324,7 @@ for my $line (@$lines)
 	{
 	$line =~ s/^\s+|\s+$//g ;
 	
-	if ($line =~ /^\|/ && $line =~ /\|/)
+	if ($line =~ /^\|/)
 		{
 		my @cells = split(/\|/, $line) ;
 		shift @cells ;
@@ -427,9 +439,15 @@ return \@widths ;
 
 sub print_table
 {
-my ($headers, $alignments, $rows, $widths, $max_cols, $style, $no_top, $no_bottom, $no_sides) = @_ ;
+my ($headers, $alignments, $rows, $lines, $widths, $max_table_width, $max_cols, $style, $no_top, $no_bottom, $no_sides) = @_ ;
 
-	my %styles = (
+my %styles = (
+	0 =>
+		{
+		tl => '|', tr => '|', bl    => '|', br => '|',
+		h  => '-', v  => '|', cross => '|',
+		t  => '|', b  => '|', l     => '|', r  => '|'
+		},
 	1 => 
 		{
 		tl => '.', tr => '.', bl    => "'", br => "'",
@@ -454,19 +472,13 @@ my ($headers, $alignments, $rows, $widths, $max_cols, $style, $no_top, $no_botto
 		h  => '═', v  => '║', cross => '╬',
 		t  => '╦', b  => '╩', l     => '╠', r  => '╣'
 		},
-	5 =>
-		{
-		tl => '|', tr => '|', bl    => '|', br => '|',
-		h  => '-', v  => '|', cross => '|',
-		t  => '|', b  => '|', l     => '|', r  => '|'
-		},
-	6 => 
+	5 => 
 		{
 		tl => ' ', tr => ' ', bl    => ' ', br => ' ',
 		h  => ' ', v  => ' ', cross => ' ',
 		t  => ' ', b  => ' ', l     => ' ', r  => ' '
 		},
-	7 => 
+	6 => 
 		{
 		tl => ' ', tr => ' ', bl    => ' ', br => ' ',
 		h  => '_', v  => ' ', cross => '_',
@@ -483,22 +495,35 @@ if ($no_sides)
 	$s->{bl} = '' ; $s->{br} = '' ;
 	}
 
-print_border('top', $widths, $s) unless $no_top ;
-print_row($headers, $widths, $alignments, $max_cols, $s, $no_sides) ;
-print_border('middle', $widths, $s) ;
+my $table_width = 0 ;
+   $table_width += $_ + 2 for @$widths ;
+   $table_width += length($s->{bl}) + length($s->{br}) + (length($s->{b}) * (@$widths - 1)) ;
 
-for my $row (@$rows)
+if($table_width <= $max_table_width)
 	{
-	print_row($row, $widths, $alignments, $max_cols, $s, $no_sides) ;
+	print_border('top', $widths, $s) unless $no_top ;
+	print_row($headers, $widths, $alignments, $max_cols, $s, $no_sides) ;
+	print_border('middle', $widths, $s) ;
+	
+	for my $row (@$rows)
+		{
+		print_row($row, $widths, $alignments, $max_cols, $s, $no_sides) ;
+		}
+	
+	print_border('bottom', $widths, $s) unless $no_bottom ;
 	}
-
-print_border('bottom', $widths, $s) unless $no_bottom ;
+else
+	{
+	for my $line ($lines->@*)
+		{
+		print $line . "\n"  ;
+		}
+	}
 }
 
 # ----------------------------------------------------------------------------
 
-sub print_border
-{
+sub print_border{
 my ($type, $widths, $s) = @_ ;
 my @parts ;
 

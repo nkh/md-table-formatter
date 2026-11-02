@@ -11,20 +11,23 @@ Formats markdown tables read from stdin or FILE and outputs to stdout.
 ## Options
 
 ```text
-  -s, --style N    Select table style (1-6, default: 1)
-                   1 = Asciio style
-                   2 = ASCII style (+, -, |)
-                   3 = Light box-drawing (Unicode)
-                   4 = Heavy box-drawing (Unicode)
-                   5 = Markdown style (|)
-                   6 = Minimal style (spaces only)
-  -a, --align-all  Align columns across all tables in the document
-  -h, --help       Show this help message
-  --no-top         no top line
-  --no-bottom      no bottom line
-  --no-sides       no side lines
-  --from-TSV       transform TSV to markdown tables
-  --TSV-no-header  TSV has no header row
+  -s, --style N        table style
+                       0 = Markdown (default)
+                       1 = Asciio
+                       2 = ASCII (+, -, |)
+                       3 = Light box-drawing (Unicode)
+                       4 = Heavy box-drawing (Unicode)
+                       5 = Minimal (spaces only)
+                       6 = horizontal lines only
+
+  -a, --align-all      align columns across all tables in the document, adds columns to tables that have fewer columns
+  -m, --max-width N    maximum table width once formatted, wider tables will not be formatted
+  -h, --help           show this help message
+  --no-top             no top line
+  --no-bottom          no bottom line
+  --no-sides           no side lines
+  --from-TSV           convert from TSV format to markdown table
+  --TSV-no-header      do not treat the first line as a header when converting from TSV
 ```
 
 ## Arguments

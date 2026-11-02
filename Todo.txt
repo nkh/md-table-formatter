@@ -1,0 +1,7 @@
+functionality: multiple tables alignment
+	-a adds columns to match the maximum number of columns in the tables
+
+	add an option to align tables based on the max width of each column but doesn't add columns
+	
+
+
