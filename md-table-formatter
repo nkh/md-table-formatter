@@ -527,7 +527,7 @@ for my $row (@$rows)
 		$row_total_width += $row_widths[$i] ;
 		}
 	
-	if($row_total_width + $formatting_length < $max_row_width && $row_total_width + $formatting_length > $total_width)
+	if($row_total_width + $formatting_length <= $max_row_width && $row_total_width + $formatting_length > $total_width)
 		{
 		# print "Changing row width: @$row\n" ;
 		# print "new: $row_total_width + " , $formatting_length, "\n" ;
@@ -535,6 +535,12 @@ for my $row (@$rows)
 		@widths = @row_widths ;
 		# print "new widths: @widths\n\n" ;
 		$total_width = $row_total_width + $formatting_length ;
+		}
+	else
+		{
+		# print "not changing row width: @$row\n" ;
+		# print "new: $row_total_width + " , $formatting_length, "\n" ;
+		# print "old widths: @widths\n" ;
 		}
 	}
 
