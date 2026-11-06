@@ -3,8 +3,57 @@
 use strict ; use warnings ;
 use utf8 ;
 
+use List::Util qw/sum/ ;
+
 binmode(STDOUT, ':utf8') ;
 binmode(STDIN, ':utf8') ;
+
+# ----------------------------------------------------------------------------
+
+my %styles = (
+	0 =>
+		{
+		tl => '|', tr => '|', bl    => '|', br => '|',
+		h  => '-', v  => '|', cross => '|',
+		t  => '|', b  => '|', l     => '|', r  => '|'
+		},
+	1 => 
+		{
+		tl => '.', tr => '.', bl    => "'", br => "'",
+		h  => '-', v  => '|', cross => '|',
+		t  => '-', b  => '-', l     => '|', r  => '|'
+		},
+	2 =>
+		{
+		tl => '+', tr => '+', bl    => '+', br => '+',
+		h  => '-', v  => '|', cross => '+',
+		t  => '+', b  => '+', l     => '+', r  => '+'
+		},
+	3 =>
+		{
+		tl => '┌', tr => '┐', bl    => '└', br => '┘',
+		h  => '─', v  => '│', cross => '┼',
+		t  => '┬', b  => '┴', l     => '├', r  => '┤'
+		},
+	4 =>
+		{
+		tl => '╔', tr => '╗', bl    => '╚', br => '╝',
+		h  => '═', v  => '║', cross => '╬',
+		t  => '╦', b  => '╩', l     => '╠', r  => '╣'
+		},
+	5 => 
+		{
+		tl => ' ', tr => ' ', bl    => ' ', br => ' ',
+		h  => ' ', v  => ' ', cross => ' ',
+		t  => ' ', b  => ' ', l     => ' ', r  => ' '
+		},
+	6 => 
+		{
+		tl => ' ', tr => ' ', bl    => ' ', br => ' ',
+		h  => '_', v  => ' ', cross => '_',
+		t  => '_', b  => '_', l     => ' ', r  => ' '
+		}
+	) ;
 
 # ----------------------------------------------------------------------------
 
@@ -24,7 +73,8 @@ my $no_sides        = 0 ;
 my $from_TSV        = 0 ;
 my $TSV_no_header   = 0 ;
 
-my $max_table_width = 10_000 ;  # Set a high value to avoid truncation
+my $max_table_width = 10_000 ; # Set a high value to avoid truncation
+my $max_row_width   = 10_000 ;
 
 my $input_file ;
 
@@ -45,6 +95,10 @@ while (@args)
 	elsif ($arg eq '-m' || $arg eq '--max-width')
 		{
 		$max_table_width = shift @args // 10_000 ;
+		}
+	elsif ($arg eq '--max-row-width')
+		{
+		$max_row_width = shift @args // 10_000 ;
 		}
 	elsif ($arg eq '--no-top')
 		{
@@ -105,7 +159,7 @@ else
 
 @lines = from_TSV(\@lines, $TSV_no_header) if $from_TSV ;
 
-process_input($max_table_width, \@lines, $style, $align_all, $no_top, $no_bottom, $no_sides) ;
+process_input($max_table_width, $max_row_width, \@lines, $style, $align_all, $no_top, $no_bottom, $no_sides) ;
 }
 
 # ----------------------------------------------------------------------------
@@ -129,6 +183,7 @@ Options:
 
   -a, --align-all      align columns across all tables in the document
   -m, --max-width N    maximum table width
+  --max-row-width N    maximum row width, helps find with long lines in tables
   -h, --help           show this help message
   --no-top             no top line
   --no-bottom          no bottom line
@@ -177,16 +232,19 @@ return @lines ;
 
 sub process_input
 {
-my ($max_table_width, $lines, $style, $align_all, $no_top, $no_bottom, $no_sides) = @_ ;
+my ($max_table_width, $max_row_width, $lines, $style, $align_all, $no_top, $no_bottom, $no_sides) = @_ ;
 
 my $i = 0 ;
-my @all_tables ;
+my @tables ;
 my @output_plan ;
+my $accumulate_text ;
 
 while ($i < @$lines)
 	{
 	if ($lines->[$i] =~ /^\s*\|/)
 		{
+		$accumulate_text = undef ;
+		
 		my @table_lines ;
 		my $start = $i ;
 		
@@ -205,11 +263,10 @@ while ($i < @$lines)
 				headers => $headers,
 				alignments => $alignments,
 				rows => $rows,
-				original_lines => \@table_lines
 				} ;
 			
-			push @all_tables, $table_data ;
-			push @output_plan, { type => 'table', index => $#all_tables, lines => \@table_lines} ;
+			push @tables, $table_data ;
+			push @output_plan, { type => 'table', table => $table_data, lines => \@table_lines} ;
 			}
 		else
 			{
@@ -218,15 +275,27 @@ while ($i < @$lines)
 		}
 	else
 		{
-		push @output_plan, { type => 'text', lines => [$lines->[$i]] } ;
+		if($accumulate_text)
+			{
+			push $accumulate_text->@*, $lines->[$i] ;
+			}
+		else
+			{
+			$accumulate_text = [ $lines->[$i] ] ;
+			push @output_plan, { type => 'text', lines => $accumulate_text } ;
+			}
+		
 		$i++ ;
 		}
 	}
 
-if ($align_all && @all_tables > 0)
+use Data::TreeDumper ;
+# print DumpTree { tables => \@tables, output_plan => \@output_plan } , '', QUOTE_VALUES => 1 ;
+
+if ($align_all && @tables > 0)
 	{
 	my $global_max_cols = 0 ;
-	for my $table (@all_tables)
+	for my $table (@tables)
 		{
 		my $max          = max_columns($table->{headers}, $table->{rows}) ;
 		$global_max_cols = $max if $max > $global_max_cols ;
@@ -234,10 +303,10 @@ if ($align_all && @all_tables > 0)
 	
 	my @global_widths = (0) x $global_max_cols ;
 	
-	for my $table (@all_tables)
+	for my $table (@tables)
 		{
 		my $max_cols = max_columns($table->{headers}, $table->{rows}) ;
-		my $widths   = calculate_widths($table->{headers}, $table->{rows}, $max_cols) ;
+		my $widths   = calculate_widths($table->{headers}, $table->{rows}, $max_cols, $max_row_width, $no_sides, $styles{$style}) ;
 		
 		for (my $j = 0; $j < @$widths; $j++)
 			{
@@ -249,7 +318,7 @@ if ($align_all && @all_tables > 0)
 		{
 		if ($item->{type} eq 'table')
 			{
-			my $table = $all_tables[$item->{index}] ;
+			my $table = $item->{table} ;
 			
 			print_table
 				(
@@ -259,6 +328,7 @@ if ($align_all && @all_tables > 0)
 				$item->{lines},
 				\@global_widths,
 				$max_table_width,
+				$max_row_width,
 				$global_max_cols,
 				$style,
 				$no_top,
@@ -281,9 +351,9 @@ else
 		{
 		if ($item->{type} eq 'table')
 			{
-			my $table      = $all_tables[$item->{index}] ;
+			my $table      = $item->{table} ;
 			my $max_cols   = max_columns($table->{headers}, $table->{rows}) ;
-			my $col_widths = calculate_widths($table->{headers}, $table->{rows}, $max_cols) ;
+			my $col_widths = calculate_widths($table->{headers}, $table->{rows}, $max_cols, $max_row_width, $no_sides, $styles{$style}) ;
 			
 			print_table
 				(
@@ -293,6 +363,7 @@ else
 				$item->{lines},
 				$col_widths,
 				$max_table_width,
+				$max_row_width,
 				$max_cols,
 				$style,
 				$no_top,
@@ -328,9 +399,9 @@ for my $line (@$lines)
 		{
 		my @cells = split(/\|/, $line) ;
 		shift @cells ;
-		pop @cells if defined $cells[-1] && $cells[-1] eq '' ;
 		
 		@cells = map { s/^\s+|\s+$//gr } @cells ;
+		@cells = map { s/^\s*\-+\s*$/---/r } @cells ;
 		
 		if (!$header_found && @headers == 0)
 			{
@@ -340,6 +411,7 @@ for my $line (@$lines)
 			{
 			@alignments   = parse_alignments(\@cells) ;
 			$header_found = 1 ;
+			push @rows, \@cells ;
 			}
 		else
 			{
@@ -363,7 +435,7 @@ my ($cells) = @_ ;
 
 for my $cell (@$cells)
 	{
-	return 0 unless $cell =~ /^:?-+:?$/ ;
+	return 0 unless $cell =~ /^\s*\-+\s*$/ ;
 	}
 
 return 1 ;
@@ -414,21 +486,55 @@ return $max ;
 
 sub calculate_widths
 {
-my ($headers, $rows, $max_cols) = @_ ;
+my ($headers, $rows, $max_cols, $max_row_width, $no_sides, $s) = @_ ;
 my @widths = (0) x $max_cols ;
+
+my $formatting = '' ;
+
+if($no_sides)
+	{
+	$formatting = (' ' . $s->{v} . ' ') x ($max_cols - 1);
+	}
+else
+	{
+	$formatting = ($s->{v} . ' ' . (' ' . $s->{v} . ' ') x ($max_cols - 1))  . ' ' . $s->{v} ;
+	}
+
+my $formatting_length = length($formatting) ;
+
+my $total_width = 0 ;
 
 for (my $i = 0; $i < @$headers; $i++)
 	{
-	my $len     = length($headers->[$i]) ;
-	$widths[$i] = $len if $len > $widths[$i] ;
+	$widths[$i]   = length($headers->[$i]) ;
+	$total_width += $widths[$i] ;
 	}
+
+$total_width += $formatting_length ;
+
+# print "headers width: $total_width, formatting: $formatting_length, max: $max_row_width\n\n" ;
 
 for my $row (@$rows)
 	{
+	my @row_widths = @widths ;
+	my $row_total_width = 0 ;
+	
 	for (my $i = 0; $i < @$row; $i++)
 		{
-		my $len     = length($row->[$i]) ;
-		$widths[$i] = $len if $len > $widths[$i] ;
+		my $len         = length($row->[$i]) ;
+		$row_widths[$i] = $len > $widths[$i] ? $len : $widths[$i] ;
+		
+		$row_total_width += $row_widths[$i] ;
+		}
+	
+	if($row_total_width + $formatting_length < $max_row_width && $row_total_width + $formatting_length > $total_width)
+		{
+		# print "Changing row width: @$row\n" ;
+		# print "new: $row_total_width + " , $formatting_length, "\n" ;
+		# print "old widths: @widths\n" ;
+		@widths = @row_widths ;
+		# print "new widths: @widths\n\n" ;
+		$total_width = $row_total_width + $formatting_length ;
 		}
 	}
 
@@ -439,52 +545,7 @@ return \@widths ;
 
 sub print_table
 {
-my ($headers, $alignments, $rows, $lines, $widths, $max_table_width, $max_cols, $style, $no_top, $no_bottom, $no_sides) = @_ ;
-
-my %styles = (
-	0 =>
-		{
-		tl => '|', tr => '|', bl    => '|', br => '|',
-		h  => '-', v  => '|', cross => '|',
-		t  => '|', b  => '|', l     => '|', r  => '|'
-		},
-	1 => 
-		{
-		tl => '.', tr => '.', bl    => "'", br => "'",
-		h  => '-', v  => '|', cross => '|',
-		t  => '-', b  => '-', l     => '|', r  => '|'
-		},
-	2 =>
-		{
-		tl => '+', tr => '+', bl    => '+', br => '+',
-		h  => '-', v  => '|', cross => '+',
-		t  => '+', b  => '+', l     => '+', r  => '+'
-		},
-	3 =>
-		{
-		tl => '┌', tr => '┐', bl    => '└', br => '┘',
-		h  => '─', v  => '│', cross => '┼',
-		t  => '┬', b  => '┴', l     => '├', r  => '┤'
-		},
-	4 =>
-		{
-		tl => '╔', tr => '╗', bl    => '╚', br => '╝',
-		h  => '═', v  => '║', cross => '╬',
-		t  => '╦', b  => '╩', l     => '╠', r  => '╣'
-		},
-	5 => 
-		{
-		tl => ' ', tr => ' ', bl    => ' ', br => ' ',
-		h  => ' ', v  => ' ', cross => ' ',
-		t  => ' ', b  => ' ', l     => ' ', r  => ' '
-		},
-	6 => 
-		{
-		tl => ' ', tr => ' ', bl    => ' ', br => ' ',
-		h  => '_', v  => ' ', cross => '_',
-		t  => '_', b  => '_', l     => ' ', r  => ' '
-		}
-	) ;
+my ($headers, $alignments, $rows, $lines, $widths, $max_table_width, $max_row_width, $max_cols, $style, $no_top, $no_bottom, $no_sides) = @_ ;
 
 my $s = $styles{$style} ;
 
@@ -495,19 +556,24 @@ if ($no_sides)
 	$s->{bl} = '' ; $s->{br} = '' ;
 	}
 
-my $table_width = 0 ;
-   $table_width += $_ + 2 for @$widths ;
+# print "column widths: @$widths\n" ;
+
+my $table_width = sum(@$widths) ;
    $table_width += length($s->{bl}) + length($s->{br}) + (length($s->{b}) * (@$widths - 1)) ;
 
 if($table_width <= $max_table_width)
 	{
 	print_border('top', $widths, $s) unless $no_top ;
-	print_row($headers, $widths, $alignments, $max_cols, $s, $no_sides) ;
+	print_row($headers, $lines->[0], $widths, $alignments, $max_row_width, $max_cols, $s, $no_sides) ;
 	print_border('middle', $widths, $s) ;
+	
+	my $index = 2 ;
+	shift @$rows ;
 	
 	for my $row (@$rows)
 		{
-		print_row($row, $widths, $alignments, $max_cols, $s, $no_sides) ;
+		print_row($row, $lines->[$index], $widths, $alignments, $max_row_width, $max_cols, $s, $no_sides) ;
+		$index++ ;
 		}
 	
 	print_border('bottom', $widths, $s) unless $no_bottom ;
@@ -523,13 +589,14 @@ else
 
 # ----------------------------------------------------------------------------
 
-sub print_border{
+sub print_border
+{
 my ($type, $widths, $s) = @_ ;
 my @parts ;
 
 for (my $i = 0; $i < @$widths; $i++)
 	{
-	push @parts, $s->{h} x ($widths->[$i] + 2) ;
+	push @parts, ' ' . $s->{h} x 3 . ' ' x ($widths->[$i] - 2) ;
 	}
 
 if ($type eq 'top')
@@ -550,7 +617,7 @@ elsif ($type eq 'bottom')
 
 sub print_row
 {
-my ($cells, $widths, $alignments, $max_cols, $s, $no_sides) = @_ ;
+my ($cells, $line, $widths, $alignments, $max_row_width, $max_cols, $s, $no_sides) = @_ ;
 
 my @formatted ;
 for (my $i = 0 ; $i < $max_cols ; $i++)
@@ -563,13 +630,25 @@ for (my $i = 0 ; $i < $max_cols ; $i++)
 	push @formatted, $formatted ;
 	}
 
+my $row ;
+
 if($no_sides)
 	{
-	print ' ' . join(' ' . $s->{v} . ' ', @formatted) . ' ' . "\n"  ;
+	$row = join(' ' . $s->{v} . ' ', @formatted) ;
 	}
 else
 	{
-	print $s->{v} . ' ' . join(' ' . $s->{v} . ' ', @formatted) . ' ' . $s->{v} . "\n"  ;
+	$row = $s->{v} . ' ' . join(' ' . $s->{v} . ' ', @formatted) . ' ' . $s->{v} ;
+	}
+
+if(length($row) > $max_row_width)
+	{
+	# print length($row) . ">" . $row . "\n"  ;
+	print ">" . $row . "\n"  ;
+	}
+else
+	{
+	print $row. "\n"  ;
 	}
 }
 

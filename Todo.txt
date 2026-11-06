@@ -3,5 +3,6 @@ functionality: multiple tables alignment
 
 	add an option to align tables based on the max width of each column but doesn't add columns
 	
+	check functionality when max-row-width is set
 
-
+	include extra empty columns added in other tables when aligning tables with different numbers of columns

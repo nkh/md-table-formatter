@@ -22,6 +22,7 @@ Formats markdown tables read from stdin or FILE and outputs to stdout.
 
   -a, --align-all      align columns across all tables in the document, adds columns to tables that have fewer columns
   -m, --max-width N    maximum table width once formatted, wider tables will not be formatted
+  --max-row-width N    maximum row width, helps find with long lines in tables
   -h, --help           show this help message
   --no-top             no top line
   --no-bottom          no bottom line
