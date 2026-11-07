@@ -75,6 +75,7 @@ my $TSV_no_header   = 0 ;
 
 my $max_table_width = 10_000 ; # Set a high value to avoid truncation
 my $max_row_width   = 10_000 ;
+my $check_width     = 0 ;
 
 my $input_file ;
 
@@ -96,7 +97,11 @@ while (@args)
 		{
 		$max_table_width = shift @args // 10_000 ;
 		}
-	elsif ($arg eq '--max-row-width')
+	elsif ($arg eq '-c' || $arg eq '--check-width')
+		{
+		$check_width = 1 ;
+		}
+	elsif ($arg eq '-r' || $arg eq '--max-row-width')
 		{
 		$max_row_width = shift @args // 10_000 ;
 		}
@@ -159,7 +164,9 @@ else
 
 @lines = from_TSV(\@lines, $TSV_no_header) if $from_TSV ;
 
-process_input($max_table_width, $max_row_width, \@lines, $style, $align_all, $no_top, $no_bottom, $no_sides) ;
+my $max_exceeded = process_input($max_table_width, $max_row_width, $check_width, \@lines, $style, $align_all, $no_top, $no_bottom, $no_sides) ;
+
+exit $max_exceeded ? 1 : 0 ;
 }
 
 # ----------------------------------------------------------------------------
@@ -172,7 +179,7 @@ Usage: md-table-formatter.pl [OPTIONS] [FILE]
 Formats markdown tables read from stdin or FILE and outputs to stdout.
 
 Options:
-  -s, --style N        table style
+  --style|s N          table style
                        0 = Markdown (default)
                        1 = Asciio
                        2 = ASCII (+, -, |)
@@ -181,15 +188,16 @@ Options:
                        5 = Minimal (spaces only)
                        6 = horizontal lines only
 
-  -a, --align-all      align columns across all tables in the document
-  -m, --max-width N    maximum table width
-  --max-row-width N    maximum row width, helps find with long lines in tables
-  -h, --help           show this help message
+  --align-all|a        align columns across all tables in the document
+  --max-width|m N      maximum table width
+  --max-row-width|r N  maximum row width, prepends '@' to rows that are too long 
+  --check-width|c      also output an errors on stderr
   --no-top             no top line
   --no-bottom          no bottom line
   --no-sides           no side lines
   --from-TSV           convert from TSV format to markdown table
   --TSV-no-header      do not treat the first line as a header when converting from TSV
+  --help|h             show this help message
 
 Arguments:
   FILE                 input file (reads from stdin if not specified)
@@ -232,7 +240,7 @@ return @lines ;
 
 sub process_input
 {
-my ($max_table_width, $max_row_width, $lines, $style, $align_all, $no_top, $no_bottom, $no_sides) = @_ ;
+my ($max_table_width, $max_row_width, $check_width, $lines, $style, $align_all, $no_top, $no_bottom, $no_sides) = @_ ;
 
 my $i = 0 ;
 my @tables ;
@@ -243,6 +251,8 @@ while ($i < @$lines)
 	{
 	if ($lines->[$i] =~ /^\s*\|/)
 		{
+		my $start_line = $i ;
+		
 		$accumulate_text = undef ;
 		
 		my @table_lines ;
@@ -266,12 +276,12 @@ while ($i < @$lines)
 				} ;
 			
 			push @tables, $table_data ;
-			push @output_plan, { type => 'table', table => $table_data, lines => \@table_lines} ;
+			push @output_plan, { type => 'table', table => $table_data, lines => \@table_lines, at_line => $start_line + 1 } ;
 			}
 		else
 			{
-			push @output_plan, { type => 'text', lines => \@table_lines } ;
-			}
+			push @output_plan, { type => 'text', lines => \@table_lines, at_line => $start_line + 1 } ;
+			} 
 		}
 	else
 		{
@@ -282,15 +292,17 @@ while ($i < @$lines)
 		else
 			{
 			$accumulate_text = [ $lines->[$i] ] ;
-			push @output_plan, { type => 'text', lines => $accumulate_text } ;
+			push @output_plan, { type => 'text', lines => $accumulate_text, at_line => $i + 1 } ;
 			}
 		
 		$i++ ;
 		}
 	}
 
-use Data::TreeDumper ;
+# use Data::TreeDumper ;
 # print DumpTree { tables => \@tables, output_plan => \@output_plan } , '', QUOTE_VALUES => 1 ;
+
+my $max_exceeded = 0 ;
 
 if ($align_all && @tables > 0)
 	{
@@ -320,21 +332,23 @@ if ($align_all && @tables > 0)
 			{
 			my $table = $item->{table} ;
 			
-			print_table
-				(
-				$table->{headers},
-				$table->{alignments},
-				$table->{rows},
-				$item->{lines},
-				\@global_widths,
-				$max_table_width,
-				$max_row_width,
-				$global_max_cols,
-				$style,
-				$no_top,
-				$no_bottom,
-				$no_sides,
-				) ;
+			$max_exceeded += print_table
+						(
+						$item->{at_line},
+						$table->{headers},
+						$table->{alignments},
+						$table->{rows},
+						$item->{lines},
+						\@global_widths,
+						$max_table_width,
+						$max_row_width,
+						$check_width,
+						$global_max_cols,
+						$style,
+						$no_top,
+						$no_bottom,
+						$no_sides,
+						) ;
 			}
 		else
 			{
@@ -352,24 +366,27 @@ else
 		if ($item->{type} eq 'table')
 			{
 			my $table      = $item->{table} ;
+			
 			my $max_cols   = max_columns($table->{headers}, $table->{rows}) ;
 			my $col_widths = calculate_widths($table->{headers}, $table->{rows}, $max_cols, $max_row_width, $no_sides, $styles{$style}) ;
 			
-			print_table
-				(
-				$table->{headers},
-				$table->{alignments},
-				$table->{rows},
-				$item->{lines},
-				$col_widths,
-				$max_table_width,
-				$max_row_width,
-				$max_cols,
-				$style,
-				$no_top,
-				$no_bottom,
-				$no_sides,
-				) ;
+			$max_exceeded += print_table
+						(
+						$item->{at_line},
+						$table->{headers},
+						$table->{alignments},
+						$table->{rows},
+						$item->{lines},
+						$col_widths,
+						$max_table_width,
+						$max_row_width,
+						$check_width,
+						$max_cols,
+						$style,
+						$no_top,
+						$no_bottom,
+						$no_sides,
+						) ;
 			}
 		else
 			{
@@ -380,6 +397,8 @@ else
 			}
 		}
 	}
+
+return $max_exceeded ;
 }
 
 # ----------------------------------------------------------------------------
@@ -551,7 +570,7 @@ return \@widths ;
 
 sub print_table
 {
-my ($headers, $alignments, $rows, $lines, $widths, $max_table_width, $max_row_width, $max_cols, $style, $no_top, $no_bottom, $no_sides) = @_ ;
+my ($at_line, $headers, $alignments, $rows, $lines, $widths, $max_table_width, $max_row_width, $check_width, $max_cols, $style, $no_top, $no_bottom, $no_sides) = @_ ;
 
 my $s = $styles{$style} ;
 
@@ -567,10 +586,12 @@ if ($no_sides)
 my $table_width = sum(@$widths) ;
    $table_width += length($s->{bl}) + length($s->{br}) + (length($s->{b}) * (@$widths - 1)) ;
 
+my $max_exceeded = 0 ;
+
 if($table_width <= $max_table_width)
 	{
 	print_border('top', $widths, $s) unless $no_top ;
-	print_row($headers, $lines->[0], $widths, $alignments, $max_row_width, $max_cols, $s, $no_sides) ;
+	$max_exceeded += print_row($at_line, $headers, $lines->[0], $widths, $alignments, $max_row_width, $check_width, $max_cols, $s, $no_sides) ;
 	print_border('middle', $widths, $s) ;
 	
 	my $index = 2 ;
@@ -578,7 +599,7 @@ if($table_width <= $max_table_width)
 	
 	for my $row (@$rows)
 		{
-		print_row($row, $lines->[$index], $widths, $alignments, $max_row_width, $max_cols, $s, $no_sides) ;
+		$max_exceeded += print_row($at_line + $index, $row, $lines->[$index], $widths, $alignments, $max_row_width, $check_width, $max_cols, $s, $no_sides) ;
 		$index++ ;
 		}
 	
@@ -586,11 +607,15 @@ if($table_width <= $max_table_width)
 	}
 else
 	{
+	$max_exceeded = 1 ;
+	
 	for my $line ($lines->@*)
 		{
 		print $line . "\n"  ;
 		}
 	}
+
+return $max_exceeded ;
 }
 
 # ----------------------------------------------------------------------------
@@ -602,6 +627,7 @@ my @parts ;
 
 for (my $i = 0; $i < @$widths; $i++)
 	{
+	# push @parts, $s->{h} x 3 . ' ' x ($widths->[$i] - 1) ; # no spaces between the horizontal dashes and the vertical bar
 	push @parts, ' ' . $s->{h} x 3 . ' ' x ($widths->[$i] - 2) ;
 	}
 
@@ -623,9 +649,9 @@ elsif ($type eq 'bottom')
 
 sub print_row
 {
-my ($cells, $line, $widths, $alignments, $max_row_width, $max_cols, $s, $no_sides) = @_ ;
+my ($at_line, $cells, $line, $widths, $alignments, $max_row_width, $check_width, $max_cols, $s, $no_sides) = @_ ;
 
-my @formatted ;
+my (@formatted, @formatted_widths) ;
 for (my $i = 0 ; $i < $max_cols ; $i++)
 	{
 	my $cell  = $i < @$cells ? $cells->[$i] : '' ;
@@ -634,6 +660,7 @@ for (my $i = 0 ; $i < $max_cols ; $i++)
 	
 	my $formatted = format_cell($cell, $width, $align) ;
 	push @formatted, $formatted ;
+	push @formatted_widths, length($formatted) ;
 	}
 
 my $row ;
@@ -650,12 +677,26 @@ else
 if(length($row) > $max_row_width)
 	{
 	# print length($row) . ">" . $row . "\n"  ;
-	print ">" . $row . "\n"  ;
+	print "@" . $row . "\n"  ;
+	
+	if($check_width)
+		{
+		print STDERR 
+			  "{"
+			. "\"line\": $at_line, "
+			. "\"column_widths\": [" . join(', ', @$widths) . "], "
+			. "\"cells_widths\" : [" . join(', ', @formatted_widths) . "]"
+			."}\n"  ;
+		
+		return 1 ;
+		}
 	}
 else
 	{
 	print $row. "\n"  ;
 	}
+
+return 0 ;
 }
 
 # ----------------------------------------------------------------------------

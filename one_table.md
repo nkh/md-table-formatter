@@ -5,6 +5,6 @@
 |Edit selected element | douck                 |
 | Insert flex point (in arrow) X            | CA0-1 |
 | 1234567890123456789012345            | CA0-1 |
-|Edit selected | douck                 |
+|Edit selected | 123456                 |
 
 end

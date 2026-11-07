@@ -11,7 +11,8 @@ Formats markdown tables read from stdin or FILE and outputs to stdout.
 ## Options
 
 ```text
-  -s, --style N        table style
+Options:
+  --style|s N          table style
                        0 = Markdown (default)
                        1 = Asciio
                        2 = ASCII (+, -, |)
@@ -20,15 +21,16 @@ Formats markdown tables read from stdin or FILE and outputs to stdout.
                        5 = Minimal (spaces only)
                        6 = horizontal lines only
 
-  -a, --align-all      align columns across all tables in the document, adds columns to tables that have fewer columns
-  -m, --max-width N    maximum table width once formatted, wider tables will not be formatted
-  --max-row-width N    maximum row width, helps find with long lines in tables
-  -h, --help           show this help message
+  --align-all|a        align columns across all tables in the document
+  --max-width|m N      maximum table width
+  --max-row-width|r N  maximum row width, prepends '@' to rows that are too long 
+  --check-width|c      also output an errors on stderr
   --no-top             no top line
   --no-bottom          no bottom line
   --no-sides           no side lines
   --from-TSV           convert from TSV format to markdown table
   --TSV-no-header      do not treat the first line as a header when converting from TSV
+  --help|h             show this help message
 ```
 
 ## Arguments
@@ -37,11 +39,28 @@ Formats markdown tables read from stdin or FILE and outputs to stdout.
   FILE             Input file (reads from stdin if not specified)
 ```
 
-## Input vs output formats
+## Input 
 
 *md-table-formatter* only accepts markdown style tables as input.
 
-The only output format that is recognized markdown is the default format with --no-top and --no-bottom options.
+## Output
+
+Non-table lines are printed as is, tables are formatted. Both are written to stdout. 
+
+If the --maxi-width is exceeded, the table will be printed as is.
+
+If the --max-row-width option is specified, any rows that exceed the maximum row width will be have '@' prepended.
+
+If --max-row-width and --check-width is set, error will also be reported to stderr and the exit code set to 1; this lets
+you use md-table-formatter in a CI/CD pipeline to check for table formatting issues.
+
+## Vim integration
+
+
+```vim
+nnoremap <Leader>at vip:!md-table-formatter --max-row-width 185<CR>
+xnoremap <Leader>at :!md-table-formatter --max-row-width 185<CR>
+```
 
 ## CLI Examples
 
@@ -51,7 +70,7 @@ The only output format that is recognized markdown is the default format with --
   md-table-formatter.pl -s 1 --align-all table.md
 ```
 
-## Examples
+## Styles
 
 Input:
 
