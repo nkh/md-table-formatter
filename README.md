@@ -56,11 +56,14 @@ you use md-table-formatter in a CI/CD pipeline to check for table formatting iss
 
 ## Vim integration
 
-
 ```vim
 nnoremap <Leader>at vip:!md-table-formatter --max-row-width 185<CR>
 xnoremap <Leader>at :!md-table-formatter --max-row-width 185<CR>
 ```
+
+## AI Skills integration
+
+There is an example skill, and how to install it, in the `use_as_skill` directory.
 
 ## CLI Examples
 

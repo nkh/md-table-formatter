@@ -1,15 +1,11 @@
 functionality: multiple tables alignment
 	-a adds columns to match the maximum number of columns in the tables
-
-	add an option to align tables based on the max width of each column but doesn't add columns
+		add an option to align tables based on the max width of each column but doesn't add columns
 	
-	check functionality when max-row-width is set
+	check functionality --all when max-row-width is set
 
-	include extra empty columns added in other tables when aligning tables with different numbers of columns
+	option to include extra empty columns, or not,  added in other tables when aligning tables with different numbers of columns
 
-functionality: output lines where maximum was passed and the column width
-	use gcc fortmat.  file:line:<text>:max format
-
-
-issue: table should be |--- not | ---, not extra space
+functionality:
+	option to table are "|---" not "| ---"; to follow a stricter standard for table formatting
 
